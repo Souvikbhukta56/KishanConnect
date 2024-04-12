@@ -1,4 +1,26 @@
 {
   "name": "KishanConnect",
-  "displayName": "KishanConnect"
+  "displayName": "KishanConnect",
+  "version": "1.0.0",
+  "platforms": ["ios", "android"],
+  "permissions": ["LOCATION"],
+  "orientation": "portrait",
+  "icon": "./assets/images/AppLogo.png",
+  "splash": {
+    "image": "./assets/images/AppLogo.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#ffffff"
+  },
+  "ios": {
+    "bundleIdentifier": "com.techcanvas.kishanconnect",
+    "infoPlist": {
+      "NSLocationWhenInUseUsageDescription": "KishanConnect needs access to your location to show items of a specific area."
+    }
+  },
+  "android": {
+    "package": "com.techcanvas.kishanconnect",
+    "permissions": ["ACCESS_FINE_LOCATION"],
+    "versionCode": 1
+  },
+  "assets": ["./assets"]
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar, View, Dimensions, Text, ScrollView, Image, TouchableOpacity, Pressable } from 'react-native';
-import { getDatabase, ref, onValue, get, set, remove } from 'firebase/database';
+import { getDatabase, ref, set, remove } from 'firebase/database';
 import { getData } from '../localStorage';
 import FarmerHeader from './others/Header';
 import ViewUserDetails from './others/ViewUserDetails';
@@ -10,8 +10,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Colors from '../assets/styles/Colors';
 const { height, width } = Dimensions.get('window');
 
-const FarmerSolditems = ({route}) => {
-    const { role } = route.params;
+const Solditems = ({ role, data }) => {
     const [dep, setDep] = useState(false);
     const [userDetails, setUserDetails] = useState({})
     const [modalDisplay, setModalDisplay] = useState(false);
@@ -22,25 +21,14 @@ const FarmerSolditems = ({route}) => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const db = getDatabase();
-                const timeRangeRef = ref(db, 'timeRange');
-                const snapshot = await get(timeRangeRef);
-                const timeRange = snapshot.val();
                 let currentTime = new Date();
                 currentTime = currentTime.getHours() * 10000 + currentTime.getMinutes() * 100 + currentTime.getSeconds();
-                const startTime = parseInt(timeRange["startTime"]);
-                const endTime = parseInt(timeRange["endTime"]);
-                const isOutOfTheRange = currentTime <= startTime || currentTime >= endTime;
-
+                const isOutOfTheRange = currentTime <= parseInt(data.timeRange["startTime"]) || currentTime >= parseInt(data.timeRange["endTime"]);
                 if (isOutOfTheRange) {
-                    const postsSnapshot = await get(ref(db, 'uploads'));
-                    const postsData = postsSnapshot.val();
-                    if (postsData) {
-                        const soldItemsRef = ref(db, 'soldItems');
-                        const soldItemsSnapshot = await get(soldItemsRef);
-                        let soldItems = soldItemsSnapshot.val() || [];
-                        for (const userId of Object.keys(postsData)) {
-                            const userPosts = postsData[userId];
+                    if (data.auctionItems) {
+                        let soldItems = data.soldItems === undefined ? [] : data.soldItems;
+                        for (const userId of Object.keys(data.auctionItems)) {
+                            const userPosts = data.auctionItems[userId];
                             for (const postId of Object.keys(userPosts)) {
                                 const postData = userPosts[postId];
                                 if (postData.currentBidder !== '-') {
@@ -52,41 +40,35 @@ const FarmerSolditems = ({route}) => {
                                         ...postData,
                                     };
                                     soldItems.push(postWithDetails);
-                                    const itemRef = ref(db, `uploads/${userId}/${postId}`);
+                                    const itemRef = ref(getDatabase(), `auctionItems/${userId}/${postId}`);
                                     await remove(itemRef);
                                 }
                             }
                         }
-                        await set(soldItemsRef, soldItems);
+                        await set(ref(getDatabase(), 'soldItems'), soldItems);
                     }
                 }
-            } catch (err) { alert("Something went wrong") }
+            } catch (err) { alert(err) }
         };
         fetchData();
     }, [dep]);
 
 
     useEffect(() => {
-        getData('user').then((user) => {
-            const database = getDatabase();
-            const postsRef = ref(database, 'soldItems'); 
-            onValue(postsRef, async (snapshot) => {
-                const postsData = snapshot.val();
-                if (postsData) {
-                    let postsArray = [];
-                    const id = role==='farmer'?['userId','currentBidder']:['currentBidder', 'userId'];
-                    for (const post of postsData) {
-                        if (post[id[0]] === user["id"]) {
-                            const userDetails = await get(ref(database, role==='farmer'?'retailer/'+ post[id[1]]:'farmer/' + post[id[1]]));
-                            const details = userDetails.val();
-                            postsArray = [{ ...post, userDetails: details }, ...postsArray];
-                        }
+        getData('user').then(async (user) => {
+            if (data.soldItems) {
+                let postsArray = [];
+                const id = role === 'farmer' ? ['userId', 'currentBidder'] : ['currentBidder', 'userId'];
+                for (const post of data.soldItems) {
+                    if (post[id[0]] === user["id"]) {
+                        const details = data[role === 'farmer' ? 'retailer' : 'farmer'][role === 'farmer' ? post[id[1]] : post[id[1]]];
+                        postsArray = [{ ...post, userDetails: details }, ...postsArray];
                     }
-                    setPosts(postsArray);
                 }
-            }, (err) => { alert("Something went wrong") });
+                setPosts(postsArray);
+            }
         });
-    }, [dep]);
+    }, [dep, data]);
 
     const openImageModal = (imageUrl) => {
         setSelectedImage(imageUrl);
@@ -106,7 +88,7 @@ const FarmerSolditems = ({route}) => {
                             <Text style={{ color: Colors.darkGrey, fontSize: 17, fontWeight: '300' }}>Weight: {post.weight}kg</Text>
                             <Text style={{ color: Colors.red, fontSize: 17, fontWeight: '300' }}>Final Price: ₹ {post.price}/kg</Text>
                             <Pressable style={{ ...styles.button, marginTop: '5%' }} onPress={() => viewUserDetails(post.userDetails)}>
-                                <Text style={{ color: Colors.darkMain }}>View {role==='farmer'?"Buyer":"Farmer"} Details</Text>
+                                <Text style={{ color: Colors.darkMain }}>View {role === 'farmer' ? "Buyer" : "Farmer"} Details</Text>
                             </Pressable>
                         </View>
                     </View>
@@ -116,24 +98,24 @@ const FarmerSolditems = ({route}) => {
         )
     }
 
-    const viewUploads = posts.length ? <ViewPosts /> : <View style={{ paddingTop: 100, alignItems: 'center' }}><Image style={{ width: 300, height: 200 }} source={require('../assets/images/farmer-vector.png')} />
+    const viewItems = posts.length ? <ViewPosts /> : <View style={{ paddingTop: 100, alignItems: 'center' }}><Image style={{ width: 300, height: 200 }} source={require('../assets/images/farmer-vector.png')} />
         <Text style={{ color: Colors.darkGrey, fontWeight: '300' }}>No Items</Text>
     </View>;
 
     const viewUserDetails = (userDetails) => {
         setUserDetails(userDetails);
-        setModalDisplay(true); 
+        setModalDisplay(true);
     };
 
     return (
-        <View style={{ flex: 1, backgroundColor:Colors.darkMain}}>
+        <View style={{ flex: 1, backgroundColor: Colors.darkMain }}>
             <StatusBar backgroundColor={Colors.mediumMain} />
-            <FarmerHeader text={role==='farmer'?"Your Sold Items":"Your Won Items"} onRefresh={() => setDep(!dep)} />
+            <FarmerHeader text={role === 'farmer' ? "Your Sold Items" : "Your Won Items"} onRefresh={() => setDep(!dep)} />
             <ViewUserDetails visible={modalDisplay} onClose={() => setModalDisplay(!modalDisplay)} userDetails={userDetails} />
-            <LinearGradient colors={[Colors.white,Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius:30, borderTopRightRadius: 30 }}>
-                {viewUploads}
+            <LinearGradient colors={[Colors.white, Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius: 30, borderTopRightRadius: 30 }}>
+                {viewItems}
             </LinearGradient>
         </View>
-    ); 
+    );
 };
-export default FarmerSolditems;
+export default Solditems;

@@ -1,106 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { View, StatusBar, Text, FlatList, Image, TouchableOpacity, TextInput, Dimensions } from 'react-native';
+import { View, StatusBar, Text, FlatList, Image, TextInput, Dimensions, Pressable } from 'react-native';
 import { FontAwesomeIcon } from "@fortawesome/react-native-fontawesome";
-import { ref, onValue, off, get } from 'firebase/database';
-import { database } from '../database';
 import { getData, setData } from '../localStorage';
 import LinearGradient from 'react-native-linear-gradient';
-import { faRefresh, faSearch } from "@fortawesome/free-solid-svg-icons";
+import { faSearch } from "@fortawesome/free-solid-svg-icons";
 import ImageViewer from './others/ImageViewer';
 import ViewUserDetails from './others/ViewUserDetails';
 import Styles from '../assets/styles/Styles';
-import Geolocation from '@react-native-community/geolocation';
 import { Picker } from "@react-native-picker/picker";
 import Colors from '../assets/styles/Colors';
 const { height, width } = Dimensions.get('window');
 
-export default Retailer_home = () => {
-  const [dep, setDep] = useState(true);
-  const [posts, setPosts] = useState([]);
+export default Retailer_home = ({ timeRange, location, auctionItems }) => {
   const [currentUser, setCurrentUser] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredPosts, setFilteredPosts] = useState([]);
+  const [filteredPosts, setFilteredPosts] = useState(auctionItems);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [Enable, setEnable] = useState("0");
-  const [location, setLocation] = useState(null);
   const [modalVisible1, setModalVisible1] = useState(false);
   const [farmerDetails, setFarmerDetails] = useState({});
-  const [timeRange, setTimeRange] = useState({
-    "startTime": "000000",
-    "endTime": "000000"
-  });
+  const [selectedItems, setSelectedItems] = useState({});
+
   const text = 'Auction Time - ' + parseInt(timeRange["startTime"] / 10000) + ':' + parseInt((timeRange["startTime"] % 10000) / 100)
     + ' to ' + parseInt(timeRange["endTime"] / 10000) + ':' + parseInt((timeRange["endTime"] % 10000) / 100);
 
-  useEffect(() => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setLocation({ latitude, longitude });
-      },
-      () => {
-        alert("Location denied");
-      },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
-    );
-  }, []);
+  useEffect(() => { setFilteredPosts(auctionItems); }, [auctionItems]);
 
   useEffect(() => {
-    const postsRef = ref(database, 'uploads');
-    const handleData = async (snapshot) => {
-      const user = await getData('user');
-      setCurrentUser(user["id"]);
-      const postsData = snapshot.val();
-      if (postsData) {
-        const allPosts = await Object.entries(postsData).reduce(async (accPromise, [userId, userPosts]) => {
-          const acc = await accPromise;
-          const farmerDetailsRef = ref(database, 'farmer/' + userId);
-          const farmerDetailsSnapshot = await get(farmerDetailsRef);
-          const farmerDetails = farmerDetailsSnapshot.val();
-          const userPostsArray = Object.entries(userPosts).map(([postId, postData]) => ({
-            userId,
-            postId,
-            ...postData,
-            farmerDetails: farmerDetails
-          }));
-          return [...acc, ...userPostsArray];
-        }, Promise.resolve([]));
-        setPosts(allPosts);
-        setFilteredPosts(allPosts);
+    const fetchSelectedItems = async () => {
+      try {
+        const user = await getData('user');
+        const items = await getData(user["id"] + '/selectedPosts');
+        setCurrentUser(user["id"]);
+        let map = {};
+        items.forEach((item) => { map[item.postId] = item; });
+        setSelectedItems(map);
+      } catch (error) {
+        alert('Something went wrong');
       }
     };
-    const handleError = () => {
-      alert('Something went wrong. Check your connection');
-    };
-    onValue(postsRef, handleData, handleError );
-    return () => {
-      off(postsRef, 'value', handleData);
-    };
-  }, [dep]);
-
-  useEffect(() => {
-    const timeRangeRef = ref(database, 'timeRange');
-    const handleError = () => {
-      alert('Something went wrong. Check your connection');
-    };
-    onValue(timeRangeRef, (snapshot) => {
-      const timeRange = snapshot.val();
-      setTimeRange(timeRange);
-    }, handleError );
-  }, [dep]);
+    fetchSelectedItems();
+  }, [auctionItems]);
 
   const handleSelectPost = async (post) => {
     try {
-      const existingPosts = await getData(currentUser + '/selectedPosts');
-      const isPostExists = existingPosts.some(existingPost => existingPost.postId === post.postId);
-      if (!isPostExists) {
-        const updatedPosts = [...existingPosts, post];
-        await setData(currentUser + '/selectedPosts', updatedPosts);
-        alert('Selected');
-      } else {
-        alert('Already selected!');
-      }
+      let map = { ...selectedItems };
+      if (map[post.postId])
+        delete map[post.postId];
+      else map[post.postId] = post;
+      setSelectedItems(map);
+      await setData(currentUser + '/selectedPosts', Object.values(map))
     } catch (error) {
       alert("Something went wrong");
     }
@@ -108,7 +58,7 @@ export default Retailer_home = () => {
 
   const handleSearch = (query) => {
     setSearchQuery(query);
-    const filtered = posts.filter(post => post.itemName.toLowerCase().includes(query.trim().toLowerCase()));
+    const filtered = auctionItems.filter(post => post.itemName.toLowerCase().includes(query.trim().toLowerCase()));
     setFilteredPosts(filtered);
   };
 
@@ -124,45 +74,47 @@ export default Retailer_home = () => {
     }
     setEnable(itemValue);
     const r = parseInt(itemValue);
-    if (r !== 0) { // r 0 means infinity
-      const filtered = posts.filter(post =>
+    if (r !== 0) { // r=0 means infinity
+      const filtered = auctionItems.filter(post =>
         post.location !== undefined && calculateDistance(post.location.latitude, post.location.longitude, location.latitude, location.longitude) <= r);
       setFilteredPosts(filtered);
     }
-    else { setFilteredPosts(posts); }
+    else { setFilteredPosts(auctionItems); }
   };
 
-  const viewFarmerDetails = (farmerDetails) => {setModalVisible1(true);setFarmerDetails(farmerDetails);};
+  const viewFarmerDetails = (farmerDetails) => { setModalVisible1(true); setFarmerDetails(farmerDetails); };
 
-  const renderPostItem = ({ item }) => (
-    <View>
-      <View style={{ flexDirection: 'row', ...Styles.center }}>
-        <TouchableOpacity style={Styles.imageContainer} onPress={() => openImageModal(item.imageUrl)}>
-          <Image style={{ width: 100, height: 100, borderRadius: 5 }} source={{ uri: item.imageUrl }} />
-        </TouchableOpacity>
-        <View style={{ flexDirection: 'column', margin: 10 }}>
-          <Text style={{ color: Colors.black, fontWeight: 'bold' }}>{item.itemName}</Text>
-          <Text style={{ color: Colors.darkGrey, fontWeight: '300' }}>Weight: {item.weight}kg</Text>
-          <View style={Styles.retailerHomePricingContainer}>
-            <Text style={{ color: Colors.red, fontWeight: '300' }}>Bid Price: ₹{item.price ? item.price : '--'}/Kg</Text>
-            <Text style={{ color: Colors.darkMain, fontWeight: '300' }}>Base Price: ₹{item.basePrice}/Kg</Text>
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: width - 170 }}>
-            <TouchableOpacity onPress={()=>viewFarmerDetails(item.farmerDetails)} style={Styles.selectButton}>
-              <Text style={{ color: Colors.white }}>View Farmer Details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleSelectPost(item)} style={{ ...Styles.selectButton, backgroundColor: Colors.red }}>
-              <Text style={{ color: Colors.white }}>Select</Text>
-            </TouchableOpacity>
+  const renderPostItem = ({ item }) => {
+    return (
+      <View>
+        <View style={{ flexDirection: 'row', ...Styles.center }}>
+          <Pressable style={Styles.imageContainer} onPress={() => openImageModal(item.imageUrl)}>
+            <Image style={{ width: 100, height: 100, borderRadius: 5 }} source={{ uri: item.imageUrl }} />
+          </Pressable>
+          <View style={{ flexDirection: 'column', margin: 10 }}>
+            <Text style={{ color: Colors.black, fontWeight: 'bold' }}>{item.itemName}</Text>
+            <Text style={{ color: Colors.darkGrey, fontWeight: '300' }}>Weight: {item.weight}kg</Text>
+            <View style={Styles.retailerHomePricingContainer}>
+              <Text style={{ color: Colors.red, fontWeight: '300' }}>Bid Price: ₹{item.price ? item.price : '--'}/Kg</Text>
+              <Text style={{ color: Colors.darkMain, fontWeight: '300' }}>Base Price: ₹{item.basePrice}/Kg</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', width: width - 170 }}>
+              <Pressable onPress={() => viewFarmerDetails(item.farmerDetails)} style={Styles.selectButton}>
+                <Text style={{ color: Colors.white }}>Farmer Details</Text>
+              </Pressable>
+              <Pressable onPress={() => handleSelectPost(item)} style={{ ...Styles.selectButton, backgroundColor: selectedItems[item.postId] ? 'rgb(255, 149, 149)' : 'red' }}>
+                <Text style={{ color: Colors.white }}>{selectedItems[item.postId] ? 'Selected' : 'Select'}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
+        <ImageViewer visible={modalVisible} onClose={() => setModalVisible(false)} height={height} width={width} imageUri={selectedImage} />
+        <View style={{ backgroundColor: Colors.darkGrey, width: '100%', height: .7 }}></View>
       </View>
-      <ImageViewer visible={modalVisible} onClose={() => setModalVisible(false)} height={height} width={width} imageUri={selectedImage} />
-      <View style={{ backgroundColor: Colors.darkGrey, width: '100%', height: .7 }}></View>
-    </View>
-  );
+    )
+  };
 
-  const viewUploads = filteredPosts.length ?
+  const viewItems = filteredPosts.length ?
     <View>
       <FlatList data={filteredPosts} renderItem={renderPostItem} keyExtractor={(item, index) => index.toString()} />
     </View>
@@ -172,10 +124,10 @@ export default Retailer_home = () => {
     </View>;
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.lightMain}}>
+    <View style={{ flex: 1, backgroundColor: Colors.lightMain }}>
       <StatusBar backgroundColor={Colors.mediumMain} />
       <LinearGradient colors={[Colors.mediumMain, Colors.darkMain]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-        style={{ width: '100%', height: '12%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center'}}>
+        style={{ width: '100%', height: '12%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
         <View style={Styles.logoBackground}>
           <Image style={{ width: 40, height: 40 }} source={require('../assets/images/logo.png')} />
         </View>
@@ -190,17 +142,15 @@ export default Retailer_home = () => {
               clearButtonMode="always"
             />
           </View>
-          <TouchableOpacity>
-            <FontAwesomeIcon icon={faSearch} size={20} style={{ color: Colors.black }} />
-          </TouchableOpacity>
+          <FontAwesomeIcon icon={faSearch} size={20} style={{ color: Colors.black }} />
         </View>
       </LinearGradient>
 
       <ViewUserDetails visible={modalVisible1} onClose={() => setModalVisible1(false)} userDetails={farmerDetails} />
 
-      <View style={{ height: 80, width: '100%', flexDirection: 'row', alignItems: 'center', paddingLeft: 10}}>
+      <View style={{ height: 80, width: '100%', flexDirection: 'row', alignItems: 'center', paddingLeft: 10 }}>
         <View style={{ height: 60, overflow: 'hidden', backgroundColor: Colors.mediumMain, alignItems: 'center', borderTopLeftRadius: 15, borderTopRightRadius: 15 }}>
-          <Text style={{ paddingBottom: 3, color:Colors.white }}>Search within</Text>
+          <Text style={{ paddingBottom: 3, color: Colors.white }}>Search within</Text>
           <Picker selectedValue={Enable}
             style={{ height: 30, width: 120, backgroundColor: Colors.white, color: Colors.black }}
             mode={"dialog"}
@@ -215,13 +165,10 @@ export default Retailer_home = () => {
           </Picker>
         </View>
         <Text style={{ color: Colors.black, marginLeft: 30 }}>{text}</Text>
-        <TouchableOpacity style={{ marginLeft: 10 }} onPress={() => setDep(!dep)}>
-          <FontAwesomeIcon icon={faRefresh} size={23} style={{ color: Colors.black }} />
-        </TouchableOpacity>
       </View>
 
-      <LinearGradient colors={[Colors.white,Colors.grey]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .69, borderTopLeftRadius:30, borderTopRightRadius: 30 }}>
-        {viewUploads}
+      <LinearGradient colors={[Colors.white, Colors.grey]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .69, borderTopLeftRadius: 30, borderTopRightRadius: 30 }}>
+        {viewItems}
       </LinearGradient>
     </View>
 

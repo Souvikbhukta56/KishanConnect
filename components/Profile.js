@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-native-fontawesome";
 import { faMessage, faShareAlt, faUsers, faStar, faSignOut } from "@fortawesome/free-solid-svg-icons";
 import { logOut } from '../database';
 import { setData, getData } from '../localStorage';
-import { getDatabase, ref, onValue, set, get } from 'firebase/database';
+import { getDatabase, ref, set } from 'firebase/database';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { getStorage, ref as sref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import ImageViewer from './others/ImageViewer';
@@ -15,8 +15,7 @@ const c1 = Colors.white;
 const { height, width } = Dimensions.get('window');
 import RNRestart from 'react-native-restart';
 
-const Profile = ({ route }) => {
-    const { role } = route.params;
+const Profile = ({ data, role }) => {
     const [user, setUser] = useState({});
     const [userId, setUserId] = useState(null);
     const [posts, setPosts] = useState([]);
@@ -29,12 +28,7 @@ const Profile = ({ route }) => {
                 const user = await getData('user');
                 const userId = user["id"];
                 setUserId(userId);
-                const database = getDatabase();
-                const postsRef = ref(database, role + '/' + userId);
-                onValue(postsRef, (snapshot) => {
-                    const userData = snapshot.val();
-                    setUser(userData);
-                });
+                setUser(data[role][userId]);
             } catch (error) {
                 console.log('Error fetching user data:', error);
             }
@@ -43,32 +37,24 @@ const Profile = ({ route }) => {
     }, []);
 
     useEffect(() => {
-        getData('user').then((user) => {
-            const database = getDatabase();
-            const postsRef = ref(database, 'soldItems');
-            onValue(postsRef, async (snapshot) => {
-                const postsData = snapshot.val();
-                if (postsData) {
-                    const postsArray = Object.values(postsData);
-                    let uniqueUsers = new Set();
-                    let ratingArray = [];
+        getData('user').then(async (user) => {
+            if (data.soldItems) {
+                const postsArray = Object.values(data.soldItems);
+                let uniqueUsers = new Set();
+                let ratingArray = [];
 
-                    for (const post of postsArray) {
-                        const id = role === 'farmer' ? ['userId', 'currentBidder'] : ['currentBidder', 'userId'];
-                        if (post[id[0]] === user["id"] && !uniqueUsers.has(post[id[1]])) {
-                            uniqueUsers.add(post[id[1]]);
-                            const userDetailsSnapshot = await get(ref(database, role === 'farmer' ? 'retailer/' + post[id[1]] : 'farmer/' + post[id[1]]));
-                            if (userDetailsSnapshot.exists()) {
-                                const details = userDetailsSnapshot.val();
-                                ratingArray.push({ postId: post.postId, id: post[id[1]], userDetails: details });
-                            }
-                        }
+                for (const post of postsArray) {
+                    const id = role === 'farmer' ? ['userId', 'currentBidder'] : ['currentBidder', 'userId'];
+                    if (post[id[0]] === user["id"] && !uniqueUsers.has(post[id[1]])) {
+                        uniqueUsers.add(post[id[1]]);
+                        const details = data[role === 'farmer' ? 'retailer' : 'farmer'][role === 'farmer' ? post[id[1]] : post[id[1]]];
+                        ratingArray.push({ postId: post.postId, id: post[id[1]], userDetails: details });
                     }
-                    setPosts(ratingArray);
                 }
-            }, (err) => { alert("Something went wrong"); });
-        });
-    }, []);
+                setPosts(ratingArray);
+            }
+        }).catch(() => { alert("Something went wrong"); });
+    }, [data]);
 
     const ViewRatings = () => {
         return (
@@ -144,20 +130,11 @@ const Profile = ({ route }) => {
         await set(userRef, { ...user, dpUrl: downloadURL });
     }
 
-
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const openImageModal = (imageUrl) => {
         setSelectedImage(imageUrl);
         setModalVisible(true);
-    };
-
-    const handleOpenEmail = () => {
-        try {
-            const recipientEmail = 'support@kishanconnect.com';
-            const emailUrl = `mailto:${recipientEmail}?subject=Subject%20of%20the%20email&body=Body%20of%20the%20email`;
-            Linking.openURL(emailUrl);
-        } catch (e) { alert("Couldn't open email"); }
     };
 
     return (
@@ -179,7 +156,7 @@ const Profile = ({ route }) => {
                 </View>
             </Modal>
 
-            <LinearGradient colors={[Colors.white,Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.profileContainer}>
+            <LinearGradient colors={[Colors.white, Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.profileContainer}>
                 <Text style={{ color: Colors.black, fontWeight: 'bold', fontSize: 18, marginTop: height * .08 }}>{user.name}</Text>
 
                 <Pressable style={{ ...styles.imagePicker, marginTop: 10, width: '30%', padding: 4 }} onPress={pickImage}>
@@ -204,7 +181,9 @@ const Profile = ({ route }) => {
                         <Text style={styles.itemText}>Log out</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.item} onPress={handleOpenEmail}>
+                    <TouchableOpacity style={styles.item} onPress={() => {
+                        if (data.supportLink) Linking.openURL(data.supportLink);
+                    }}>
                         <View style={styles.iconStyle}>
                             <FontAwesomeIcon icon={faMessage} size={15} style={{ color: c1 }} />
                         </View>
@@ -225,7 +204,9 @@ const Profile = ({ route }) => {
                         <Text style={styles.itemText}>Share the app</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.item}>
+                    <TouchableOpacity style={styles.item} onPress={() => {
+                        if (data.aboutUsLink) Linking.openURL(data.aboutUsLink);
+                    }}>
                         <View style={styles.iconStyle}>
                             <FontAwesomeIcon icon={faUsers} size={15} style={{ color: c1 }} />
                         </View>

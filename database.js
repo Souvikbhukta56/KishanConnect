@@ -69,7 +69,7 @@ async function signUp(name, ph, email, password, address, id, role) {
       console.log('Sign-in error:', error);
       throw error; 
     }
-  }
+  } 
 
 async function uploadPost(itemName, weight, bidPrice, basePrice, imageUrl, currentBidder, location) {
 try {

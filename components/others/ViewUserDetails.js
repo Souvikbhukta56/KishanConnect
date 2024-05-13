@@ -29,7 +29,7 @@ const ViewUserDetails = ({ visible, onClose, userDetails }) => {
                             ))}
                         </Text>
                     </View>
-                    <View>
+                    <View style={{width:'60%'}}>
                         <Text style={{ marginBottom: 5, color:Colors.black }}><FontAwesomeIcon icon={faUser} style={{ color: '#28c380' }} /><Text>  {userDetails.name}</Text></Text>
                         <Text style={{ marginBottom: 5, color:Colors.black }}><FontAwesomeIcon icon={faPhone} style={{ color: 'violet' }} /><Text>  {userDetails.ph}</Text></Text>
                         <Text style={{ marginBottom: 5, color:Colors.black }}><FontAwesomeIcon icon={faEnvelope} style={{ color: 'orange' }} /><Text>  {userDetails.email}</Text></Text>

@@ -1,6 +1,5 @@
 import React from 'react';
 import { createMaterialBottomTabNavigator } from '@react-navigation/material-bottom-tabs';
-import { View } from 'react-native';
 import FarmerHome from './components/FarmerHome';
 import FarmerUpload from './components/FarmerUpload';
 import FarmerSolditems from './components/Solditems';
@@ -11,49 +10,54 @@ import { faHome, faUserCircle, faUpload, faShoppingCart } from "@fortawesome/fre
 
 import Styles from './assets/styles/Styles';
 import Colors from './assets/styles/Colors';
+
 const Tab = createMaterialBottomTabNavigator();
 
-function MainApp() {
+function MainApp({ data, location }) {
   return (
     <Tab.Navigator initialRouteName="Home" activeColor={Colors.black} inactiveColor={Colors.mediumMain} barStyle={Styles.tabbar}>
       <Tab.Screen
         name="Home"
-        component={FarmerHome}
         options={{
           tabBarIcon: ({ color }) => (
             <FontAwesomeIcon icon={faHome} size={20} style={{ color: color }} />
           ),
         }}
-      />
+      >
+        {() => <FarmerHome timeRange={data.timeRange} auctionItems={data.auctionItems} retailers={data.retailer} />}
+      </Tab.Screen>
       <Tab.Screen
         name="Upload"
-        component={FarmerUpload}
         options={{
           tabBarIcon: ({ color }) => (
             <FontAwesomeIcon icon={faUpload} size={20} style={{ color: color }} />
           ),
         }}
-      />
+      >
+        {() => <FarmerUpload location={location} uploads={data.uploads} suggestedPrice={data.suggestedPrice} />}
+      </Tab.Screen>
+
       <Tab.Screen
         name="Sold Items"
-        component={FarmerSolditems}
         options={{
           tabBarIcon: ({ color }) => (
             <FontAwesomeIcon icon={faShoppingCart} size={20} style={{ color: color }} />
           ),
         }}
-        initialParams={{ role: 'farmer' }}
-      />
+      >
+        {() => <FarmerSolditems data={data} role='farmer' />}
+      </Tab.Screen>
+
       <Tab.Screen
         name="Profile"
-        component={FarmerProfile}
         options={{
           tabBarIcon: ({ color }) => (
             <FontAwesomeIcon icon={faUserCircle} size={20} style={{ color: color }} />
           ),
         }}
-        initialParams={{ role: 'farmer' }}
-      />
+      >
+        {() => <FarmerProfile data={data} role='farmer' />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }

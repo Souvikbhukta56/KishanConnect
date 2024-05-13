@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StatusBar, Dimensions, Text, FlatList, Image, Button, Pressable } from 'react-native';
-import { getDatabase, ref, update, onValue, off } from 'firebase/database';
+import { getDatabase, ref, update } from 'firebase/database';
 import { getData, setData } from '../localStorage';
 import Header from './others/Header';
 import ImageViewer from './others/ImageViewer';
@@ -9,98 +9,58 @@ import Colors from '../assets/styles/Colors';
 import LinearGradient from 'react-native-linear-gradient'
 const { height, width } = Dimensions.get('window');
 
-export default Auction = () => {
+export default Auction = ({ timeRange, auctionItems }) => {
   const [dep, setDep] = useState(true);
-  const [auctionEnabled, setAuctionEnabled] = useState(false);
+  const [auctionEnabled, setAuctionEnabled] = useState({});
   const [currentUser, setCurrentUser] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
-  const [timeRange, setTimeRange] = useState({
-    "startTime": "000000",
-    "endTime": "000000"
-  });
+
   const text = 'Auction Time: ' + parseInt(timeRange["startTime"] / 10000) + ':' + parseInt((timeRange["startTime"] % 10000) / 100)
     + ' to ' + parseInt(timeRange["endTime"] / 10000) + ':' + parseInt((timeRange["endTime"] % 10000) / 100);
 
   useEffect(() => {
-    const fetchSelectedItems = async () => {
+    const fetchData = async () => {
       try {
         const user = await getData('user');
-        const items = await getData(user["id"] + '/selectedPosts');
-        setSelectedItems(items);
-        setCurrentUser(user["id"]);
-      } catch (error) {
-        alert('Something went wrong. Check your connection');
-      }
-    };
-    fetchSelectedItems();
-  }, [dep]);
-
-  useEffect(() => {
-    const db = getDatabase();
-    const postsRef = ref(db, 'uploads');
-    const handleData = async (snapshot) => {
-      const postsData = snapshot.val();
-      if (postsData) {
-        setSelectedItems(prevItems => {
-          return prevItems.map(item => {
-            const updatedPostData = postsData[item.userId]?.[item.postId];
-            if (updatedPostData) {
-              return {
-                ...item,
-                ...updatedPostData
-              };
+        const items = await getData(`${user.id}/selectedPosts`);
+        setCurrentUser(user.id);
+        const currentTime = new Date();
+        const formattedCurrentTime = currentTime.getHours() * 10000 + currentTime.getMinutes() * 100 + currentTime.getSeconds();
+        // If within range
+        if (formattedCurrentTime >= parseInt(timeRange.startTime) && formattedCurrentTime <= parseInt(timeRange.endTime)) {
+          let auctionEnabledObject = items.reduce((acc, item) => {
+            acc[item.postId] = item.currentBidder !== user.id;
+            return acc;
+          }, {});
+          const updatedItems = items.map(item => {
+            if (item.price !== auctionItems[item.userId][item.postId].price) {
+              item.price = auctionItems[item.userId][item.postId].price;
+              auctionEnabledObject[item.postId] = true;
             }
             return item;
           });
-        });
-      }
-    };
-    const handleError = () => {
-      alert('Something went wrong. Check your connection');
-    };
-    onValue(postsRef, handleData, { error: handleError });
-    return () => {
-      off(postsRef, 'value', handleData);
-    };
-  }, [dep]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const db = getDatabase();
-        const timeRangeRef = ref(db, 'timeRange');
-        onValue(timeRangeRef, async (snapshot) => {
-          const timeRange = snapshot.val();
-          setTimeRange(timeRange);
-          if (timeRange) {
-            let currentTime = new Date();
-            currentTime = currentTime.getHours() * 10000 + currentTime.getMinutes() * 100 + currentTime.getSeconds();
-            const startTime = parseInt(timeRange["startTime"]);
-            const endTime = parseInt(timeRange["endTime"]);
-            const isWithinRange = currentTime >= startTime && currentTime <= endTime;
-            setAuctionEnabled(isWithinRange);
-
-            if (isWithinRange) {
-              await setData('auctionHappened', true);
-            } else {
-              const auctionHappened = await getData('auctionHappened');
-              if (auctionHappened === true) {
-                await setData('auctionHappened', false);
-                const user = await getData('user');
-                await setData(user["id"] + '/selectedPosts', []);
-              }
-            }
+          setSelectedItems(updatedItems);
+          setAuctionEnabled(auctionEnabledObject);
+          await setData('auctionHappened', true);
+        }
+        else {
+          const auctionEnabledObject = Object.fromEntries(Object.keys(auctionEnabled).map(key => [key, false]));
+          setAuctionEnabled(auctionEnabledObject);
+          setSelectedItems(items);
+          const auctionHappened = await getData('auctionHappened');
+          if (auctionHappened === true) {
+            await setData('auctionHappened', false);
+            await setData(`${currentUser}/selectedPosts`, []);
           }
-        });
+        }
       } catch (error) {
-        alert("Something went wrong");
+        alert(error.message);
       }
     };
     fetchData();
-  }, [dep]);
-
+  }, [dep, timeRange]);
 
   const handleBid = async (userId, postId, currentPrice, basePrice) => {
     try {
@@ -110,9 +70,19 @@ export default Auction = () => {
       const startTime = parseInt(timeRange["startTime"]);
       const endTime = parseInt(timeRange["endTime"]);
       const isWithinRange = currentTime >= startTime && currentTime <= endTime;
-      setAuctionEnabled(isWithinRange);
-      if(!isWithinRange)return;
-      
+      if (!isWithinRange) {
+        let obj = { ...auctionEnabled };
+        for (let key in obj) {
+          obj[key] = false;
+        }
+        setAuctionEnabled(obj);
+        return;
+      }
+
+      let obj = { ...auctionEnabled };
+      obj[postId] = false;
+      setAuctionEnabled(obj);
+
       // Update the state
       let newPrice = parseInt(currentPrice);
       newPrice = newPrice ? newPrice + 5 : parseInt(basePrice);
@@ -130,8 +100,8 @@ export default Auction = () => {
       // Update Firebase Realtime Database with the new price
       const db = getDatabase();
       const updates = {};
-      updates[`uploads/${userId}/${postId}/price`] = newPrice;
-      updates[`uploads/${userId}/${postId}/currentBidder`] = currentUser;
+      updates[`auctionItems/${userId}/${postId}/price`] = newPrice;
+      updates[`auctionItems/${userId}/${postId}/currentBidder`] = currentUser;
       await update(ref(db), updates);
     } catch (error) {
       alert('something went wrong');
@@ -157,7 +127,7 @@ export default Auction = () => {
             <Text style={{ color: Colors.darkMain, fontWeight: '300' }}>Base Price: ₹{item.basePrice}/kg</Text>
           </View>
           <Button title='Bid'
-            onPress={() => handleBid(item.userId, item.postId, item.price, item.basePrice)} disabled={!auctionEnabled}
+            onPress={() => handleBid(item.userId, item.postId, item.price, item.basePrice)} disabled={!auctionEnabled[item.postId]}
           />
         </View>
       </View>
@@ -166,7 +136,7 @@ export default Auction = () => {
     </>
   );
 
-  const viewUploads = selectedItems.length ?
+  const viewItems = selectedItems.length ?
     <View>
       <FlatList data={selectedItems} renderItem={renderSelectedItem} keyExtractor={(item, index) => index.toString()} />
     </View>
@@ -178,8 +148,8 @@ export default Auction = () => {
     <View style={{ height: height, backgroundColor: Colors.darkMain }}>
       <StatusBar backgroundColor={Colors.mediumMain} />
       <Header text={text} onRefresh={() => setDep(!dep)} />
-      <LinearGradient colors={[Colors.white,Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius:30, borderTopRightRadius: 30 }}>
-        {viewUploads}
+      <LinearGradient colors={[Colors.white, Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius: 30, borderTopRightRadius: 30 }}>
+        {viewItems}
       </LinearGradient>
     </View>
   );

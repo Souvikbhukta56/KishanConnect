@@ -1,6 +1,7 @@
 import { Modal, View, Button, Text } from "react-native";
 import styles from "../../assets/styles/Styles";
 import Colors from "../../assets/styles/Colors";
+
 const ConfirmBox = ({ visible, onClose, onConfirm, onCancel }) => {
     return (
         <Modal visible={visible} transparent={true} onRequestClose={onClose}>

@@ -3,12 +3,11 @@ import { View, Text, Dimensions, Image, TouchableOpacity, Modal, ScrollView, Tex
 import { FontAwesomeIcon } from "@fortawesome/react-native-fontawesome";
 import { launchImageLibrary } from 'react-native-image-picker';
 import { uploadPost } from '../database';
-import { ref, onValue, remove } from 'firebase/database';
+import { ref, remove } from 'firebase/database';
 import { database } from '../database';
 import { getData } from '../localStorage';
-import { faTrashAlt, faAdd } from "@fortawesome/free-solid-svg-icons";
+import { faTrashAlt, faAdd, faEye } from "@fortawesome/free-solid-svg-icons";
 import { getStorage, ref as sref, deleteObject } from 'firebase/storage';
-import Geolocation from '@react-native-community/geolocation';
 import ImageViewer from './others/ImageViewer';
 import ConfirmBox from './others/ConfirmBox';
 import FarmerHeader from './others/Header';
@@ -17,7 +16,7 @@ import Colors from '../assets/styles/Colors';
 import LinearGradient from 'react-native-linear-gradient';
 const { height, width } = Dimensions.get('window');
 
-const FarmerUpload = () => {
+const FarmerUpload = ({ location, uploads, suggestedPrice }) => {
     const [iname, setIName] = useState('');
     const [wei, setWei] = useState('');
     const [price, setPrice] = useState('');
@@ -27,62 +26,42 @@ const FarmerUpload = () => {
 
     const [modalDis, setModalDis] = useState(false);
     const [modalVisible1, setModalVisible1] = useState(false);
-    const [userId, setUserId] = useState(null);
     const [postId, setPostId] = useState(null);
     const [imageUrl, setImageUrl] = useState(null);
 
     const [dep, setDep] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
-    const [location, setLocation] = useState(null);
 
     useEffect(() => {
-        Geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                setLocation({ latitude, longitude });
-            },
-            (error) => {
-                alert("Location denied");
-            },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
-        );
-    }, []);
-
-    useEffect(() => {
-        getData('user').then((user) => {
-            const userId = user["id"];
-            setCurrentUser(userId);
-            const postsRef = ref(database, 'uploads/' + userId);
-            onValue(postsRef, async (snapshot) => {
-                const postsData = snapshot.val();
-                if (postsData) {
-                    const postsArray = await Promise.all(Object.entries(postsData).map(([postId, postObject]) => ({
-                        postId: postId,
-                        userId: userId,
-                        ...postObject
-                    })));
-                    postsArray.reverse();
-                    setPosts(postsArray);
-                } else {
-                    setPosts([]);
-                }
-            });
+        getData('user').then(async (user) => {
+            setCurrentUser(user["id"]);
+            if (uploads[user["id"]]) {
+                const postsArray = await Promise.all(Object.entries(uploads[user["id"]]).map(([postId, postObject]) => ({
+                    postId: postId,
+                    userId: user["id"],
+                    ...postObject
+                })));
+                postsArray.reverse();
+                setPosts(postsArray);
+            } else {
+                setPosts([]);
+            }
         }).catch(() => alert("Something went wrong"));
-    }, [dep]);
+    }, [dep, uploads]);
 
     const deleteItem = async () => {
         try {
-            const itemRef = ref(database, `uploads/${userId}/${postId}`);
-            await remove(itemRef);
             setModalVisible1(false);
+            const itemRef = ref(database, `uploads/${currentUser}/${postId}`);
+            await remove(itemRef);
             const filename = imageUrl.split('/').pop().split('?')[0].slice(9);
             const storage = getStorage();
             const storageRef = sref(storage, 'images/' + filename);
             await deleteObject(storageRef);
             alert(`Item deleted successfully`);
-        } catch (error) {
-            alert('Error deleting item. Please check your internet connection.');
+        } catch {
+            alert("Something went wrong");
         }
     };
 
@@ -109,15 +88,21 @@ const FarmerUpload = () => {
             price: 0,
             basePrice: price,
             imageUrl: image,
-            currentBidder: '-'
+            currentBidder: '-',
         }, ...posts]))
         uploadPost(iname, wei, 0, price, image, '-', location);
         setModalDis(false); setIName(''); setWei(''); setImage(null); setPrice('');
     };
-
+    const enterSuggestedPrice = () => {
+        if (iname === '') { alert("Please enter item name"); return; }
+        let pri = suggestedPrice[iname.trim().toLowerCase()];
+        if (pri === undefined) { alert("No suggested price for " + iname); return; }
+        pri = Math.floor(parseFloat(pri));
+        setPrice(pri.toString());
+    }
     const ViewPosts = () => {
         return (
-            <ScrollView style={{paddingTop:10}}>
+            <ScrollView style={{ paddingTop: 10 }}>
                 {posts.map((post) => (
                     <View key={post.postId} style={styles.uploadPostContainer}>
                         <TouchableOpacity style={styles.farmerUploadImage} onPress={() => openImageModal(post.imageUrl)}>
@@ -126,9 +111,9 @@ const FarmerUpload = () => {
                         <View style={{ flexDirection: 'column', margin: 10, width: 160 }}>
                             <Text style={{ color: Colors.black, fontWeight: '700', fontSize: 20 }}>{post.itemName}</Text>
                             <Text style={{ color: Colors.darkGrey, fontSize: 17, fontWeight: '300' }}>Weight: {post.weight}kg</Text>
-                            <Text style={{ color: Colors.darkMain, fontSize: 17, fontWeight: '300' }}>Base Price: <Text style={{color:Colors.black}}>₹ {post.basePrice}/kg</Text></Text>
+                            <Text style={{ color: Colors.darkMain, fontSize: 17, fontWeight: '300' }}>Base Price: <Text style={{ color: Colors.black }}>₹ {post.basePrice}/kg</Text></Text>
                         </View>
-                        <Pressable style={{ height: 90, marginLeft: '8%', justifyContent: 'center' }} onPress={() => { setUserId(post.userId); setPostId(post.postId); setImageUrl(post.imageUrl); setModalVisible1(true); }}>
+                        <Pressable style={{ height: 90, marginLeft: '8%', justifyContent: 'center' }} onPress={() => { setPostId(post.postId); setImageUrl(post.imageUrl); setModalVisible1(true); }}>
                             <FontAwesomeIcon icon={faTrashAlt} size={22} style={{ color: Colors.darkMain }} />
                         </Pressable>
                     </View>
@@ -146,26 +131,30 @@ const FarmerUpload = () => {
         </View>;
 
     return (
-        <View style={{ flex: 1, backgroundColor:Colors.darkMain }}>
+        <View style={{ flex: 1, backgroundColor: Colors.darkMain }}>
             <StatusBar backgroundColor={Colors.mediumMain} />
             <FarmerHeader text={"Upload Item Details for Auction"} onRefresh={() => setDep(!dep)} />
-            <Modal animationType='slide' transparent={true} visible={modalDis} onRequestClose={() => setModalDis(!modalDis)}>
+            <Modal transparent={true} visible={modalDis} onRequestClose={() => setModalDis(!modalDis)}>
                 <View style={styles.modal}>
                     <View style={styles.centeredView}>
                         <TextInput style={styles.textinput} placeholder='Item Name..' placeholderTextColor={Colors.darkGrey} value={iname} onChangeText={text => setIName(text)} />
                         <TextInput style={styles.textinput} placeholder='Weight in Kg..' placeholderTextColor={Colors.darkGrey} keyboardType='numeric' value={wei} onChangeText={text => setWei(text)} />
                         <TextInput style={styles.textinput} placeholder='Price per Kg..' placeholderTextColor={Colors.darkGrey} keyboardType='numeric' value={price} onChangeText={text => setPrice(text)} />
+                        <Pressable style={{ backgroundColor: Colors.mediumMain, padding: 10, marginTop: 15, flexDirection: 'row' }} onPress={enterSuggestedPrice}>
+                            <FontAwesomeIcon icon={faEye} size={18} style={{ color: Colors.white }} />
+                            <Text style={{ color: Colors.white, paddingLeft: 10 }}>View Suggested Price</Text>
+                        </Pressable>
+
                         <Pressable style={styles.imagePicker} onPress={pickImage}>
                             <Text style={{ color: Colors.darkMain }}>Upload an Image</Text>
                         </Pressable>
                         <Pressable style={styles.plusCentered} onPress={upload}>
-                            <Text style={{ color:Colors.white }}>Upload</Text>
+                            <Text style={{ color: Colors.white }}>Upload</Text>
                         </Pressable>
                     </View>
                 </View>
             </Modal>
-
-            <LinearGradient colors={[Colors.white,Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius:30, borderTopRightRadius: 30 }}>
+            <LinearGradient colors={[Colors.white, Colors.lightMain]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ height: height * .8, borderTopLeftRadius: 30, borderTopRightRadius: 30 }}>
                 {viewUploads}
             </LinearGradient>
 
